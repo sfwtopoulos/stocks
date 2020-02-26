@@ -76,13 +76,6 @@ dfstocks.Date.count()
 dfstocks = dfstocks.sort_values(['Date', 'Company'])
 dfstocks.head(100)
 
-#Test Split
-#dfstocks_split = dfstocks.sample(frac=0.9998,random_state=200)
-#sub_split=dfstocks.drop(dfstocks_split.index)
-# sub_split = sub_split.reindex(index=sub_split.Date(sub_split.index.min(), 
-#                                           sub_split.index.max(), 
-#                                           freq='D')).fillna(method='ffill')
-
 #Converting Datatypes
 dfstocks.Date=pd.to_datetime(dfstocks.Date)
 dfstocks.Close=pd.to_numeric(dfstocks.Close)
@@ -93,7 +86,7 @@ dfstocks.Low=pd.to_numeric(dfstocks.Low)
 dfstocks.dtypes
 
 #dfstocks[dfstocks['Company'].str.contains("AMZN")]
-sub_split=dfstocks[dfstocks['Company'].str.contains("AAPL")]
+sub_split=dfstocks[dfstocks['Company'].str.contains("AIG")]
 sub_split.isnull().values.any()
 sub_split.isna().values.any()
 sub_split = sub_split.sort_values(['Date'])
@@ -102,45 +95,40 @@ sub_split.shape[0]
 
 sub_split
 
-TRAIN_PERCENT = 0.7
-#STOCK_INDEX = '^GSPC'
-VERBOSE=True
-
 # prepare training and testing data sets for LSTM based sequence modeling
-#def get_seq_train_test(time_series, scaling=True,train_size=0.9):
-def get_seq_train_test(time_series,train_size=0.9):
-    # scaler = None
-    # if scaling:
-    #scaling of variables to range [0,1]
-    #must scale seperatly or scale only the output variable maybe!??
-    scaler = MinMaxScaler(feature_range=(0, 1))
-    #reshape(-1,1) -1 --> unknown number of rows, 1 --> 1 column
-    #time_series = np.array(time_series).reshape(-1,1)
-    time_series = np.array(time_series).reshape(-1,2)
-    #time_series = np.array(time_series)
-    scaled_stock_series = scaler.fit_transform(time_series)
-    # else:
-    #     scaled_stock_series = time_series
-    #scaled_stock_series = time_series
-    time_series = scaled_stock_series
+#def dimitris_function(time_series, scaling=True,split_ratio=0.9):
+def dimitris_function(time_series,split_ratio=0.9):
+
+    series1 = pd.Series(time_series[time_series.columns[0]])
+    series2 = pd.Series(time_series[time_series.columns[1]])
+
+    values1 = series1.values
+    values1 = values1.reshape((len(values1), 1))
+    values2 = series2.values
+    values2 = values2.reshape((len(values2), 1))
+
+    scaler1 = MinMaxScaler(feature_range=(0, 1))
+    time_series["scaled1"] = scaler1.fit_transform(values1)
+    scaler2 = MinMaxScaler(feature_range=(0, 1))
+    time_series["scaled2"]= scaler2.fit_transform(values2)
+
+
+    time_series = time_series[["scaled1","scaled2"]].values
+
         
-    #train_size = int(len(scaled_stock_series) * train_size)
-    train_size = int(len(time_series) * train_size)
+    split_ratio = int(len(time_series) * split_ratio)
 
-    #train = scaled_stock_series[0:train_size]
-    train = time_series[0:train_size]
-    #test = scaled_stock_series[train_size:len(scaled_stock_series)]
-    test = time_series[train_size:len(time_series)]
+    train = time_series[0:split_ratio]
+    test = time_series[split_ratio:len(time_series)]
     
-    return train,test,scaler
+    return train,test,scaler1,scaler2
 
-def get_seq_model(hidden_units=4,input_shape=(1,1),verbose=False):
+def get_seq_model(hidden_units=4,input_shape=(1,1)):
     # create and fit the LSTM network
     model = Sequential()
-    # samples*timesteps*featuress
+    # samples*timesteps*features
     # https://keras.io/getting-started/sequential-model-guide/
     #relu_advanced=keras.activations.relu(x,)
-
     model.add(LSTM(input_shape=input_shape,
                    units = hidden_units,  
    #                activation='relu',
@@ -155,29 +143,27 @@ def get_seq_model(hidden_units=4,input_shape=(1,1),verbose=False):
     start = time.time()
     #softsign
     #model.add(activation='softsign')
-
-
+    
     model.compile(loss="mse", optimizer="rmsprop")
 
-    if verbose:
-        print("> Compilation Time : ", time.time() - start)
-        print(model.summary())
+    print("> Compilation Time : ", time.time() - start)
+    print(model.summary())
 
     return model
 
-type(sub_split.Close)
+print(type(sub_split.Close))
 sub_split=sub_split[['Volume', 'Close']]
+#sub_split.columns[1]
 
 # split train and test datasets
-train,test,scaler = get_seq_train_test(sub_split,
-#                                  scaling=True,
-                                   train_size=TRAIN_PERCENT)
+train,test,scaler_Volume,scaler_Close = dimitris_function(sub_split,split_ratio=0.7)
 
 #train
 print(len(train))
 print(train.shape[0])
 print(train.shape)
 print(test.shape)
+print(train)
 
 #We use numpy to reshape our time series into 3D tensors.
 train = np.reshape(train,(1,train.shape[0],2))
@@ -199,16 +185,16 @@ print("test_y shape={}".format(test_y.shape))
 # build RNN model
 seq_lstm_model=None
 try:
-    seq_lstm_model = get_seq_model(input_shape=(train_x.shape[1],2),
-                                                verbose=VERBOSE)
+    seq_lstm_model = get_seq_model(input_shape=(train_x.shape[1],2))
 except:
     print("Model Build Failed. Trying Again")
-    seq_lstm_model = get_seq_model(input_shape=(train_x.shape[1],2),
-                                                verbose=VERBOSE)
+    seq_lstm_model = get_seq_model(input_shape=(train_x.shape[1],2))
+
+train_y
 
 # train the model
 seq_lstm_model.fit(train_x, train_y,
-                #epochs=250, batch_size=1,
+                #epochs=20, batch_size=1,
                 epochs=250, batch_size=1,
                 verbose=2)
 print("Model Fit Complete")
@@ -233,7 +219,12 @@ testPredict
 
 testPredict
 
-scaler
+testPredict=np.delete(testPredict, 0, 2)
+trainPredict=np.delete(trainPredict, 0, 2)
+
+trainPredict
+
+type(testPredict)
 
 # # inverse transformation
 
@@ -250,10 +241,11 @@ scaler
 # trainPredict = scaler.inverse_transform(trainPredict.reshape(trainPredict.shape[1]))
 # testPredict = scaler.inverse_transform(testPredict.reshape(testPredict.shape[1]))
 
-trainPredict = scaler.inverse_transform(trainPredict.\
-                                        reshape(-1,2))
-testPredict = scaler.inverse_transform(testPredict.\
-                                       reshape(-1,2))
+trainPredict = scaler_Close.inverse_transform(trainPredict.\
+                                        reshape(-1,1))
+testPredict = scaler_Close.inverse_transform(testPredict.\
+                                       reshape(-1,1))
+
 
 # # inverse transformation
 # trainPredict = scaler.inverse_transform(trainPredict.\
@@ -271,20 +263,17 @@ sub_split_date.reset_index(drop=True, inplace=True)
 sub_split_date.shape[0]
 
 # plot the true and forecasted values
-train_size = len(trainPredict)+1
-#sub_split.Date.dt.year
-# plt.plot(sub_split.index,
-#           sub_split.Close.values,c='black',
-#           alpha=0.3,label='True Data')
+split_ratio = len(trainPredict)+1
+
 plt.plot(sub_split_date.Date,
           sub_split.Close.values,c='black',
           alpha=0.3,label='True Data')
-# # multipl x2
-# plt.plot(sub_split_date.Date[1:train_size],
-#           trainPredict,label='Training Fit',c='g')
-# #mulitple x3
-# plt.plot(sub_split_date.Date[train_size+1:],
-#           testPredict[:test_x.shape[1]],label='Testing Forecast')
+
+plt.plot(sub_split_date.Date[1:split_ratio],
+          trainPredict,label='Training Fit',c='g')
+
+plt.plot(sub_split_date.Date[split_ratio+1:],
+          testPredict[:test_x.shape[1]],label='Testing Forecast')
 plt.title('Forecast Plot')
 plt.legend()
 plt.show()
